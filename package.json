@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build",
+    "icons:generate": "python3 scripts/generate-icon.py",
+    "setup:mac": "scripts/setup-desktop-mac.command",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

@@ -1,32 +1,55 @@
-# React + TypeScript + Vite
+# Stellaris Writing
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Stellaris Writing is a local-first desktop writing check-in app built with React, Vite, and Tauri.
 
-Currently, two official plugins are available:
+## Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run desktop
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+This opens the app as a native desktop window. It does not require Chrome or a browser tab.
+
+## Create A Desktop Launcher On macOS
+
+Double-click:
+
+```text
+scripts/setup-desktop-mac.command
+```
+
+The setup script will:
+
+- install dependencies if needed
+- create `Stellaris Writing.app` on your Desktop
+- use the Stellaris star-map icon
+- launch the local Tauri desktop app when double-clicked
+
+For a cloned GitHub copy, the user only needs Node.js installed, then double-clicks the setup script.
+
+## Build An Installable App
+
+```sh
+npm install
+npm run desktop:build
+```
+
+The packaged macOS app will be created under:
+
+```text
+src-tauri/target/release/bundle/
+```
+
+That build is the better option when sending the app to someone who should not run it from source.
+
+## Development Commands
+
+```sh
+npm run dev            # browser dev server
+npm run desktop        # Tauri desktop dev app
+npm run desktop:build  # packaged desktop app
+npm run icons:generate # regenerate app icons
+npm run build          # frontend production build
+npm run lint           # oxlint
+```
