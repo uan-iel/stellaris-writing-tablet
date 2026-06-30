@@ -511,8 +511,16 @@ function starIntensity(piece: WritingPiece) {
   return Math.min(100, Math.floor(countWriting(piece.content).effective / 30))
 }
 
-function paragraphPrefix(mode: ParagraphMode) {
-  return mode === 'zh' ? '　　' : mode === 'en' ? '  ' : ''
+function normalizeEditorInput(value: string, mode: ParagraphMode) {
+  if (mode === 'zh') {
+    return value.replace(/(^|\n)　　/g, '$1')
+  }
+
+  if (mode === 'en') {
+    return value.replace(/(^|\n) {2}/g, '$1')
+  }
+
+  return value
 }
 
 function markdownForPiece(
@@ -822,26 +830,6 @@ function App() {
       openAnchorMenu()
       return
     }
-
-    if (event.key !== 'Enter') {
-      return
-    }
-
-    event.preventDefault()
-
-    const target = event.currentTarget
-    const start = target.selectionStart
-    const end = target.selectionEnd
-    const insertion = `\n${paragraphPrefix(selectedPiece.paragraphMode)}`
-    const nextText =
-      currentEditorText.slice(0, start) + insertion + currentEditorText.slice(end)
-    const nextCaret = start + insertion.length
-
-    updateCurrentEditorPage(nextText)
-    window.requestAnimationFrame(() => {
-      target.selectionStart = nextCaret
-      target.selectionEnd = nextCaret
-    })
   }
 
   function openAnchorMenu(event?: MouseEvent<HTMLTextAreaElement>) {
@@ -1339,7 +1327,11 @@ function App() {
           <textarea
             className={`writing-surface indent-${selectedPiece.paragraphMode}`}
             onKeyDown={handleWritingKeyDown}
-            onChange={(event) => updateCurrentEditorPage(event.target.value)}
+            onChange={(event) =>
+              updateCurrentEditorPage(
+                normalizeEditorInput(event.target.value, selectedPiece.paragraphMode),
+              )
+            }
             onContextMenu={openAnchorMenu}
             ref={writingSurfaceRef}
             spellCheck="true"
