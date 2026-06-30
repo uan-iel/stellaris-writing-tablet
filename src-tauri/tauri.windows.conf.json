@@ -1,0 +1,19 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": ["English"],
+        "displayLanguageSelector": false,
+        "installerHooks": "windows/installer-hooks.nsh",
+        "startMenuFolder": "Stellaris Writing"
+      }
+    }
+  }
+}

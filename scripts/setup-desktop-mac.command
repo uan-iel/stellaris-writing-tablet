@@ -9,6 +9,8 @@ APP_CONTENTS="$DESKTOP_APP/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 LAUNCHER="$APP_MACOS/$APP_NAME"
+INSTALLED_APP="/Applications/$APP_NAME.app"
+PACKAGED_APP="$PROJECT_DIR/src-tauri/target/release/bundle/macos/$APP_NAME.app"
 
 notify() {
   if [ "${STELLARIS_SETUP_SILENT:-0}" = "1" ]; then
@@ -19,18 +21,9 @@ notify() {
   osascript -e "display dialog \"$1\" buttons {\"OK\"} default button \"OK\"" || echo "$1"
 }
 
-if ! command -v npm >/dev/null 2>&1; then
-  notify "npm was not found. Please install Node.js first, then run this setup again."
-  exit 1
-fi
-
 cd "$PROJECT_DIR"
 
-if [ ! -d "node_modules" ]; then
-  npm install
-fi
-
-if [ ! -f "src-tauri/icons/icon.icns" ]; then
+if [ ! -f "src-tauri/icons/icon.icns" ] && command -v npm >/dev/null 2>&1; then
   npm run icons:generate
 fi
 
@@ -68,10 +61,22 @@ PLIST
 cat > "$LAUNCHER" <<LAUNCH
 #!/bin/zsh
 set -euo pipefail
+
+if [ -d "$INSTALLED_APP" ]; then
+  /usr/bin/open "$INSTALLED_APP"
+  exit 0
+fi
+
+if [ -d "$PACKAGED_APP" ]; then
+  /usr/bin/open "$PACKAGED_APP"
+  exit 0
+fi
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:\$PATH"
 cd "$PROJECT_DIR"
 
 if ! command -v npm >/dev/null 2>&1; then
-  osascript -e 'display dialog "npm was not found. Please install Node.js first." buttons {"OK"} default button "OK"'
+  osascript -e 'display dialog "Stellaris Writing is not installed in /Applications, and npm was not found for source-mode launch. Install the DMG app first, or install Node.js for development mode." buttons {"OK"} default button "OK"'
   exit 1
 fi
 
