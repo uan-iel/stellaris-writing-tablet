@@ -62,3 +62,29 @@ jobs:
         with:
           name: Stellaris-Writing-Windows
           path: src-tauri/target/release/bundle/nsis/*.exe
+
+  release:
+    name: Create GitHub Release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: Stellaris-Writing-macOS
+          path: release-assets
+
+      - name: Download Windows EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: Stellaris-Writing-Windows
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Stellaris Writing ${{ github.ref_name }}
+          files: release-assets/*
