@@ -455,7 +455,13 @@ const uiText = {
     importEnglishFont: '导入英文字体',
     fontImportFailed: '字体导入失败，请确认文件格式正确后重试。',
     fontImported: '字体已导入并启用。',
+    fontDeleted: '字体已删除。',
     fontStorageFailed: '字体配置无法写入本地存储，已保留页面可用状态。请删除过大的导入字体后再试。',
+    importedFonts: '已导入字体',
+    noImportedFonts: '还没有导入字体',
+    activeFont: '正在启用',
+    useFont: '启用',
+    deleteFont: '删除',
   },
   en: {
     appSubtitle: 'WRITING CHECK-IN',
@@ -534,7 +540,13 @@ const uiText = {
     importEnglishFont: 'Import English font',
     fontImportFailed: 'Font import failed. Please check the file format and try again.',
     fontImported: 'Font imported and enabled.',
+    fontDeleted: 'Font deleted.',
     fontStorageFailed: 'Font settings could not be saved locally. The page is still usable; remove oversized imported fonts and try again.',
+    importedFonts: 'Imported fonts',
+    noImportedFonts: 'No imported fonts yet',
+    activeFont: 'Active',
+    useFont: 'Use',
+    deleteFont: 'Delete',
   },
 } satisfies Record<Language, Record<string, string>>
 
@@ -680,6 +692,29 @@ async function loadImportedFont(storageKey: string) {
     }
     request.onerror = () => reject(request.error)
     transaction.oncomplete = () => db.close()
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error)
+    }
+    transaction.onabort = () => {
+      db.close()
+      reject(transaction.error)
+    }
+  })
+}
+
+async function deleteImportedFont(storageKey: string) {
+  const db = await openFontDatabase()
+
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(fontStoreName, 'readwrite')
+    const store = transaction.objectStore(fontStoreName)
+
+    store.delete(storageKey)
+    transaction.oncomplete = () => {
+      db.close()
+      resolve()
+    }
     transaction.onerror = () => {
       db.close()
       reject(transaction.error)
@@ -1016,9 +1051,14 @@ function App() {
     () => customFontCss(fontSettings, fontUrls),
     [fontSettings, fontUrls],
   )
+  const activeAppFont = language === 'zh' ? fontSettings.zhFont : fontSettings.enFont
   const appStyle = {
     '--font-zh': fontSettings.zhFont,
     '--font-en': fontSettings.enFont,
+    '--font-active': activeAppFont,
+    '--display': `var(--font-active), ${language === 'zh' ? fontSettings.enFont : fontSettings.zhFont}, Didot, 'Bodoni 72', serif`,
+    '--serif': `var(--font-active), ${language === 'zh' ? fontSettings.enFont : fontSettings.zhFont}, Georgia, serif`,
+    '--sans': `var(--font-active), 'Avenir Next', 'Helvetica Neue', 'PingFang SC', Arial, sans-serif`,
   } as CSSProperties
   const editorPages = splitIntoPages(selectedPiece.content)
   const currentEditorPage = Math.min(editorPage, editorPages.length - 1)
@@ -2105,6 +2145,49 @@ function SettingsView({
     })),
   ]
 
+  function fontValue(font: FontImport) {
+    return `"${font.family}"`
+  }
+
+  async function removeFont(kind: 'zh' | 'en', font: FontImport) {
+    const value = fontValue(font)
+
+    try {
+      if (font.storageKey) {
+        await deleteImportedFont(font.storageKey)
+      }
+    } catch (error) {
+      console.warn('Unable to delete imported font file', error)
+    }
+
+    onFontSettingsChange((current) => {
+      if (kind === 'zh') {
+        return {
+          ...current,
+          zhFont: current.zhFont === value ? defaultFontSettings.zhFont : current.zhFont,
+          zhImports: current.zhImports.filter((item) => item.family !== font.family),
+        }
+      }
+
+      return {
+        ...current,
+        enFont: current.enFont === value ? defaultFontSettings.enFont : current.enFont,
+        enImports: current.enImports.filter((item) => item.family !== font.family),
+      }
+    })
+    onFontNoticeChange(t.fontDeleted)
+  }
+
+  function activateImportedFont(kind: 'zh' | 'en', font: FontImport) {
+    const value = fontValue(font)
+
+    onFontSettingsChange((current) => ({
+      ...current,
+      ...(kind === 'zh' ? { zhFont: value } : { enFont: value }),
+    }))
+    onFontNoticeChange('')
+  }
+
   async function importFont(event: ChangeEvent<HTMLInputElement>, kind: 'zh' | 'en') {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -2239,6 +2322,63 @@ function SettingsView({
               onChange={(event) => importFont(event, 'en')}
             />
           </label>
+        </div>
+        <div className="imported-fonts-panel">
+          <span>{t.importedFonts}</span>
+          {fontSettings.zhImports.length + fontSettings.enImports.length > 0 ? (
+            <div className="imported-fonts-list">
+              {fontSettings.zhImports.map((font) => {
+                const active = fontSettings.zhFont === fontValue(font)
+
+                return (
+                  <article key={font.family}>
+                    <div>
+                      <strong>{font.label}</strong>
+                      <small>{t.chineseFont}</small>
+                    </div>
+                    <div className="imported-font-actions">
+                      <button
+                        type="button"
+                        disabled={active}
+                        onClick={() => activateImportedFont('zh', font)}
+                      >
+                        {active ? t.activeFont : t.useFont}
+                      </button>
+                      <button type="button" onClick={() => removeFont('zh', font)}>
+                        {t.deleteFont}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+              {fontSettings.enImports.map((font) => {
+                const active = fontSettings.enFont === fontValue(font)
+
+                return (
+                  <article key={font.family}>
+                    <div>
+                      <strong>{font.label}</strong>
+                      <small>{t.englishFont}</small>
+                    </div>
+                    <div className="imported-font-actions">
+                      <button
+                        type="button"
+                        disabled={active}
+                        onClick={() => activateImportedFont('en', font)}
+                      >
+                        {active ? t.activeFont : t.useFont}
+                      </button>
+                      <button type="button" onClick={() => removeFont('en', font)}>
+                        {t.deleteFont}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <p>{t.noImportedFonts}</p>
+          )}
         </div>
         {fontNotice ? <p className="settings-note">{fontNotice}</p> : null}
       </div>
