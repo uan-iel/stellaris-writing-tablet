@@ -3,45 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use base64::{engine::general_purpose, Engine as _};
-
-#[tauri::command]
-fn save_markdown_file(filename: String, contents: String) -> Result<String, String> {
-    let mut directory = downloads_dir()
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    directory.push("Stellaris Notes");
-
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Could not create notes folder: {error}"))?;
-
-    let filename = markdown_filename(&filename);
-    let path = unique_file_path(&directory, &filename);
-
-    fs::write(&path, contents).map_err(|error| format!("Could not save markdown file: {error}"))?;
-
-    Ok(path.display().to_string())
-}
-
-#[tauri::command]
-fn save_pdf_file(filename: String, contents_base64: String) -> Result<String, String> {
-    let mut directory = downloads_dir()
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    directory.push("Stellaris Whiteboards");
-
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Could not create whiteboard folder: {error}"))?;
-
-    let filename = pdf_filename(&filename);
-    let path = unique_file_path(&directory, &filename);
-    let contents = general_purpose::STANDARD
-        .decode(contents_base64)
-        .map_err(|error| format!("Could not decode PDF file: {error}"))?;
-
-    fs::write(&path, contents).map_err(|error| format!("Could not save PDF file: {error}"))?;
-
-    Ok(path.display().to_string())
-}
-
 #[tauri::command]
 fn save_app_snapshot(contents: String) -> Result<String, String> {
     let directory = durable_data_dir()
@@ -119,39 +80,6 @@ fn unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-fn markdown_filename(value: &str) -> String {
-    file_with_extension(value, "Untitled Note", "md")
-}
-
-fn pdf_filename(value: &str) -> String {
-    file_with_extension(value, "Untitled Whiteboard", "pdf")
-}
-
-fn file_with_extension(value: &str, fallback: &str, extension: &str) -> String {
-    let mut name = value
-        .chars()
-        .map(|character| match character {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-            character if character.is_control() => '-',
-            character => character,
-        })
-        .collect::<String>()
-        .trim()
-        .trim_matches('.')
-        .to_string();
-
-    if name.is_empty() {
-        name = fallback.to_string();
-    }
-
-    let required_suffix = format!(".{extension}");
-    if !name.to_lowercase().ends_with(&required_suffix) {
-        name.push_str(&required_suffix);
-    }
-
-    name
-}
-
 fn unique_file_path(directory: &Path, filename: &str) -> PathBuf {
     let original = Path::new(filename);
     let stem = original
@@ -176,6 +104,7 @@ fn unique_file_path(directory: &Path, filename: &str) -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -187,8 +116,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            save_markdown_file,
-            save_pdf_file,
             save_app_snapshot,
             load_app_snapshot,
             export_migration_file

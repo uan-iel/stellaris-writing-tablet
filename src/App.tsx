@@ -9,6 +9,8 @@ import type {
   SetStateAction,
 } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { writeFile, BaseDirectory } from '@tauri-apps/plugin-fs'
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import './App.css'
 
 type ProgressState = 'unbound' | 'draft' | 'lit'
@@ -463,9 +465,9 @@ const uiText = {
     copyToClipboard: '复制全文',
     copiedToClipboard: '已复制',
     copyIdle: '复制',
-    saveMarkdown: '保存 Markdown',
-    savedMarkdown: '已保存 Markdown',
-    downloadedMarkdown: '已下载 Markdown',
+    saveDocx: '保存 DOCX',
+    savedDocx: '已保存 DOCX',
+    downloadedDocx: '已下载 DOCX',
     language: '语言',
     currentLanguage: '中文',
     backToWheel: '返回星图',
@@ -575,9 +577,9 @@ const uiText = {
     copyToClipboard: 'Copy to Clipboard',
     copiedToClipboard: 'Copied to Clipboard',
     copyIdle: 'Copy',
-    saveMarkdown: 'Save Markdown',
-    savedMarkdown: 'Saved Markdown',
-    downloadedMarkdown: 'Downloaded Markdown',
+    saveDocx: 'Save DOCX',
+    savedDocx: 'Saved DOCX',
+    downloadedDocx: 'Downloaded DOCX',
     language: 'Language',
     currentLanguage: 'English',
     backToWheel: 'Back to Wheel',
@@ -1035,10 +1037,6 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
 }
 
-function escapeYaml(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
 function safeMarkdownFilename(value: string) {
   const name = value
     .replace(/[/:*?"<>|\\]/g, '-')
@@ -1047,6 +1045,27 @@ function safeMarkdownFilename(value: string) {
     .replace(/^\.+|\.+$/g, '')
 
   return `${name || 'Untitled Note'}.md`
+}
+
+function safeDocxFilename(value: string) {
+  const name = value
+    .replace(/[/:*?"<>|\\]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+
+  return `${name || 'Untitled Note'}.docx`
+}
+
+function fallbackDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 function plainTextForExport(content: string) {
@@ -1107,48 +1126,55 @@ function starIntensity(piece: WritingPiece) {
   return Math.min(100, Math.floor(countWriting(piece.content).effective / 30))
 }
 
-function markdownForPiece(
+async function docxBlobForPiece(
   piece: WritingPiece,
   zodiac: Zodiac,
   star: ConstellationStar,
 ) {
   const stats = countWriting(piece.content)
   const body = plainTextForExport(piece.content).trim()
+  const paragraphs: Paragraph[] = []
 
-  return [
-    '---',
-    `title: "${escapeYaml(piece.title)}"`,
-    `zodiac: "${escapeYaml(zodiac.latin)}"`,
-    `star: "${escapeYaml(star.label)}"`,
-    `words: ${stats.effective}`,
-    `characters: ${stats.characters}`,
-    `target: ${piece.target}`,
-    `paragraphMode: "${piece.paragraphMode}"`,
-    `exportedAt: "${new Date().toISOString()}"`,
-    '---',
-    '',
-    `# ${piece.title}`,
-    '',
-    `- Zodiac: ${zodiac.latin}`,
-    `- Star: ${star.label}`,
-    `- Progress: ${formatNumber(stats.effective)} / ${formatNumber(piece.target)} words`,
-    '',
-    body || '_No writing yet._',
-    '',
-  ].join('\n')
-}
+  paragraphs.push(
+    new Paragraph({
+      text: piece.title,
+      heading: HeadingLevel.HEADING_1,
+    }),
+  )
 
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  const chunkSize = 0x8000
+  paragraphs.push(
+    new Paragraph({
+      children: [
+        new TextRun({ text: `Zodiac: ${zodiac.latin}`, break: 1 }),
+        new TextRun({ text: `Star: ${star.label}`, break: 1 }),
+        new TextRun({
+          text: `Progress: ${formatNumber(stats.effective)} / ${formatNumber(piece.target)} words`,
+          break: 1,
+        }),
+      ],
+    }),
+  )
 
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize)
-    binary += String.fromCharCode(...chunk)
+  paragraphs.push(new Paragraph({ text: '' }))
+
+  if (body) {
+    body.split(/\n{2,}/).forEach((paragraph) => {
+      paragraphs.push(new Paragraph(paragraph))
+    })
+  } else {
+    paragraphs.push(new Paragraph('_No writing yet._'))
   }
 
-  return window.btoa(binary)
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: paragraphs,
+      },
+    ],
+  })
+
+  return Packer.toBlob(doc)
 }
 
 function pieceForStar(
@@ -1233,7 +1259,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('galaxy')
   const [selectedStarId, setSelectedStarId] = useState(zodiacs[3].stars[0].id)
   const [copyState, setCopyState] = useState('Copy')
-  const [saveState, setSaveState] = useState('Save Markdown')
+  const [saveState, setSaveState] = useState('Save DOCX')
   const [editorPage, setEditorPage] = useState(0)
   const [pendingViewMode, setPendingViewMode] = useState<ViewMode | null>(null)
   const [dockLogDraft, setDockLogDraft] = useState('')
@@ -1703,33 +1729,30 @@ function App() {
     window.setTimeout(() => setCopyState('Copy'), 1600)
   }
 
-  async function savePieceAsMarkdown() {
-    const markdown = markdownForPiece(selectedPiece, selectedZodiac, selectedStar)
-    const filename = safeMarkdownFilename(
+  async function savePieceAsDocx() {
+    const filename = safeDocxFilename(
       `${selectedPiece.title} - ${selectedZodiac.latin} - ${selectedStar.label}`,
     )
+    const blob = await docxBlobForPiece(selectedPiece, selectedZodiac, selectedStar)
 
-    try {
-      const path = await invoke<string>('save_markdown_file', {
-        filename,
-        contents: markdown,
-      })
-      setSaveState(`Saved: ${path}`)
-    } catch {
-      const url = URL.createObjectURL(
-        new Blob([markdown], { type: 'text/markdown;charset=utf-8' }),
-      )
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.append(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-      setSaveState('Downloaded Markdown')
+    if (isTauriRuntime()) {
+      try {
+        const arrayBuffer = await blob.arrayBuffer()
+        await writeFile(filename, new Uint8Array(arrayBuffer), {
+          baseDir: BaseDirectory.Download,
+        })
+        setSaveState('Saved DOCX')
+      } catch (error) {
+        console.warn('Unable to save DOCX through Tauri, falling back to browser download', error)
+        fallbackDownload(blob, filename)
+        setSaveState('Downloaded DOCX')
+      }
+    } else {
+      fallbackDownload(blob, filename)
+      setSaveState('Downloaded DOCX')
     }
 
-    window.setTimeout(() => setSaveState('Save Markdown'), 2200)
+    window.setTimeout(() => setSaveState('Save DOCX'), 2200)
   }
 
   return (
@@ -2039,12 +2062,12 @@ function App() {
               <button className="secondary-action" type="button" onClick={copyPiece}>
                 {copyState === 'Copied' ? t.copiedToClipboard : t.copyToClipboard}
               </button>
-              <button className="secondary-action" type="button" onClick={savePieceAsMarkdown}>
+              <button className="secondary-action" type="button" onClick={savePieceAsDocx}>
                 {saveState.startsWith('Saved')
-                  ? t.savedMarkdown
-                  : saveState === 'Downloaded Markdown'
-                    ? t.downloadedMarkdown
-                    : t.saveMarkdown}
+                  ? t.savedDocx
+                  : saveState === 'Downloaded DOCX'
+                    ? t.downloadedDocx
+                    : t.saveDocx}
               </button>
               <button
                 className="language-toggle"
@@ -2103,8 +2126,8 @@ function App() {
             <button className="copy-button" type="button" onClick={copyPiece}>
               {copyState === 'Copied' ? t.copiedToClipboard : t.copyIdle}
             </button>
-            <button className="copy-button" type="button" onClick={savePieceAsMarkdown}>
-              {saveState.startsWith('Saved') ? t.savedMarkdown : t.saveMarkdown}
+            <button className="copy-button" type="button" onClick={savePieceAsDocx}>
+              {saveState.startsWith('Saved') ? t.savedDocx : t.saveDocx}
             </button>
           </div>
 
@@ -2791,8 +2814,10 @@ function WhiteboardsView({
 
     if (isTauriRuntime()) {
       try {
-        const contentsBase64 = arrayBufferToBase64(doc.output('arraybuffer'))
-        await invoke<string>('save_pdf_file', { filename, contentsBase64 })
+        const arrayBuffer = doc.output('arraybuffer')
+        await writeFile(filename, new Uint8Array(arrayBuffer), {
+          baseDir: BaseDirectory.Download,
+        })
         return
       } catch (error) {
         console.warn('Unable to save PDF through Tauri, falling back to browser download', error)
