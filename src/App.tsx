@@ -9,7 +9,9 @@ import type {
   SetStateAction,
 } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { writeFile, BaseDirectory } from '@tauri-apps/plugin-fs'
+import { platform } from '@tauri-apps/plugin-os'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import './App.css'
 
@@ -468,6 +470,7 @@ const uiText = {
     saveDocx: '保存 DOCX',
     savedDocx: '已保存 DOCX',
     downloadedDocx: '已下载 DOCX',
+    saveDocxFailed: '保存失败',
     language: '语言',
     currentLanguage: '中文',
     backToWheel: '返回星图',
@@ -580,6 +583,7 @@ const uiText = {
     saveDocx: 'Save DOCX',
     savedDocx: 'Saved DOCX',
     downloadedDocx: 'Downloaded DOCX',
+    saveDocxFailed: 'Save failed',
     language: 'Language',
     currentLanguage: 'English',
     backToWheel: 'Back to Wheel',
@@ -1066,6 +1070,29 @@ function fallbackDownload(blob: Blob, filename: string) {
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+async function saveBlobToDevice(blob: Blob, filename: string) {
+  if (isTauriRuntime()) {
+    const currentPlatform = await platform()
+
+    if (currentPlatform === 'android' || currentPlatform === 'ios') {
+      fallbackDownload(blob, filename)
+      return
+    }
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer()
+      await writeFile(filename, new Uint8Array(arrayBuffer), {
+        baseDir: BaseDirectory.Download,
+      })
+    } catch (error) {
+      console.warn('Unable to save through Tauri, falling back to browser download', error)
+      fallbackDownload(blob, filename)
+    }
+  } else {
+    fallbackDownload(blob, filename)
+  }
 }
 
 function plainTextForExport(content: string) {
@@ -1711,21 +1738,32 @@ function App() {
   }
 
   async function copyPiece() {
-    const html = htmlForExport(selectedPiece)
     const text = plainTextForExport(selectedPiece.content)
 
-    if (navigator.clipboard && 'ClipboardItem' in window) {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([text], { type: 'text/plain' }),
-        }),
-      ])
-    } else {
-      await navigator.clipboard.writeText(text)
+    try {
+      if (isTauriRuntime()) {
+        await writeText(text)
+      } else {
+        const html = htmlForExport(selectedPiece)
+
+        if (navigator.clipboard && 'ClipboardItem' in window) {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': new Blob([html], { type: 'text/html' }),
+              'text/plain': new Blob([text], { type: 'text/plain' }),
+            }),
+          ])
+        } else {
+          await navigator.clipboard.writeText(text)
+        }
+      }
+
+      setCopyState('Copied')
+    } catch (error) {
+      console.warn('Copy failed', error)
+      setCopyState('Copy failed')
     }
 
-    setCopyState('Copied')
     window.setTimeout(() => setCopyState('Copy'), 1600)
   }
 
@@ -1735,21 +1773,12 @@ function App() {
     )
     const blob = await docxBlobForPiece(selectedPiece, selectedZodiac, selectedStar)
 
-    if (isTauriRuntime()) {
-      try {
-        const arrayBuffer = await blob.arrayBuffer()
-        await writeFile(filename, new Uint8Array(arrayBuffer), {
-          baseDir: BaseDirectory.Download,
-        })
-        setSaveState('Saved DOCX')
-      } catch (error) {
-        console.warn('Unable to save DOCX through Tauri, falling back to browser download', error)
-        fallbackDownload(blob, filename)
-        setSaveState('Downloaded DOCX')
-      }
-    } else {
-      fallbackDownload(blob, filename)
-      setSaveState('Downloaded DOCX')
+    try {
+      await saveBlobToDevice(blob, filename)
+      setSaveState('Saved DOCX')
+    } catch (error) {
+      console.warn('DOCX save failed', error)
+      setSaveState('Save failed')
     }
 
     window.setTimeout(() => setSaveState('Save DOCX'), 2200)
@@ -2063,11 +2092,13 @@ function App() {
                 {copyState === 'Copied' ? t.copiedToClipboard : t.copyToClipboard}
               </button>
               <button className="secondary-action" type="button" onClick={savePieceAsDocx}>
-                {saveState.startsWith('Saved')
+                {saveState === 'Saved DOCX'
                   ? t.savedDocx
                   : saveState === 'Downloaded DOCX'
                     ? t.downloadedDocx
-                    : t.saveDocx}
+                    : saveState === 'Save failed'
+                      ? t.saveDocxFailed
+                      : t.saveDocx}
               </button>
               <button
                 className="language-toggle"
@@ -2127,7 +2158,13 @@ function App() {
               {copyState === 'Copied' ? t.copiedToClipboard : t.copyIdle}
             </button>
             <button className="copy-button" type="button" onClick={savePieceAsDocx}>
-              {saveState.startsWith('Saved') ? t.savedDocx : t.saveDocx}
+              {saveState === 'Saved DOCX'
+                ? t.savedDocx
+                : saveState === 'Downloaded DOCX'
+                  ? t.downloadedDocx
+                  : saveState === 'Save failed'
+                    ? t.saveDocxFailed
+                    : t.saveDocx}
             </button>
           </div>
 
@@ -2812,19 +2849,13 @@ function WhiteboardsView({
     })
     const filename = `${safeMarkdownFilename(selectedBoard.title).replace(/\.md$/i, '')}.pdf`
 
-    if (isTauriRuntime()) {
-      try {
-        const arrayBuffer = doc.output('arraybuffer')
-        await writeFile(filename, new Uint8Array(arrayBuffer), {
-          baseDir: BaseDirectory.Download,
-        })
-        return
-      } catch (error) {
-        console.warn('Unable to save PDF through Tauri, falling back to browser download', error)
-      }
+    try {
+      const blob = doc.output('blob')
+      await saveBlobToDevice(blob, filename)
+    } catch (error) {
+      console.warn('PDF save failed', error)
+      doc.save(filename)
     }
-
-    doc.save(filename)
   }
 
   return (

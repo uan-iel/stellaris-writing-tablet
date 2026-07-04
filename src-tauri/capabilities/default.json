@@ -7,8 +7,10 @@
   ],
   "permissions": [
     "core:default",
+    "clipboard-manager:allow-write-text",
     "fs:allow-write-file",
     "fs:allow-download-write",
-    "fs:allow-download-read"
+    "fs:allow-download-read",
+    "os:allow-platform"
   ]
 }
