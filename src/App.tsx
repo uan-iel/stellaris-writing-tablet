@@ -915,24 +915,6 @@ function fontOptionKey(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, '-')
 }
 
-function customFontCss(settings: FontSettings, fontUrls: Record<string, string>) {
-  return [...settings.zhImports, ...settings.enImports]
-    .map((font) => {
-      const source = font.dataUrl ?? (font.storageKey ? fontUrls[font.storageKey] : '')
-
-      if (!source) {
-        return ''
-      }
-
-      return `@font-face {
-  font-family: "${font.family.replace(/["\\]/g, '')}";
-  src: url("${source.replace(/["\\\n\r]/g, '')}");
-  font-display: swap;
-}`
-    })
-    .join('\n')
-}
-
 function createInitialPieces() {
   return Object.fromEntries(
     zodiacs.flatMap((zodiac) =>
@@ -1156,6 +1138,19 @@ function markdownForPiece(
   ].join('\n')
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunkSize = 0x8000
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+
+  return window.btoa(binary)
+}
+
 function pieceForStar(
   pieces: Record<string, WritingPiece>,
   zodiacId: string,
@@ -1265,7 +1260,7 @@ function App() {
   const [fontSettings, setFontSettings] = useState<FontSettings>(() => {
     return normalizeFontSettings(parseStoredJson<Partial<FontSettings> | null>(fontStorageKey, null))
   })
-  const [fontUrls, setFontUrls] = useState<Record<string, string>>({})
+  const [, setFontUrls] = useState<Record<string, string>>({})
   const [migrationNotice, setMigrationNotice] = useState('')
   const [appCopy, setAppCopy] = useState<AppCopy>(() => {
     return {
@@ -1294,17 +1289,16 @@ function App() {
   const activeTheme = themeMode === 'auto' ? getAutoTheme(now) : themeMode
   const t = uiText[language]
   const activeMottos = language === 'zh' ? zodiacMottosZh : zodiacMottos
-  const activeFontCss = useMemo(
-    () => customFontCss(fontSettings, fontUrls),
-    [fontSettings, fontUrls],
-  )
-  const activeAppFont = language === 'zh' ? fontSettings.zhFont : fontSettings.enFont
+  const tabletFontSettings = defaultFontSettings
+  const activeFontCss = ''
+  const activeAppFont =
+    language === 'zh' ? tabletFontSettings.zhFont : tabletFontSettings.enFont
   const appStyle = {
-    '--font-zh': fontSettings.zhFont,
-    '--font-en': fontSettings.enFont,
+    '--font-zh': tabletFontSettings.zhFont,
+    '--font-en': tabletFontSettings.enFont,
     '--font-active': activeAppFont,
-    '--display': `var(--font-active), ${language === 'zh' ? fontSettings.enFont : fontSettings.zhFont}, Didot, 'Bodoni 72', serif`,
-    '--serif': `var(--font-active), ${language === 'zh' ? fontSettings.enFont : fontSettings.zhFont}, Georgia, serif`,
+    '--display': `var(--font-active), ${language === 'zh' ? tabletFontSettings.enFont : tabletFontSettings.zhFont}, Didot, 'Bodoni 72', serif`,
+    '--serif': `var(--font-active), ${language === 'zh' ? tabletFontSettings.enFont : tabletFontSettings.zhFont}, Georgia, serif`,
     '--sans': `var(--font-active), 'Avenir Next', 'Helvetica Neue', 'PingFang SC', Arial, sans-serif`,
   } as CSSProperties
   const editorPages = splitIntoPages(selectedPiece.content)
@@ -1871,7 +1865,6 @@ function App() {
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectZodiac(index)}
                   >
-                    <span>{textSymbol(zodiac.symbol)}</span>
                     <svg className="mini-map" viewBox="0 0 100 100" aria-hidden="true">
                       {zodiac.connections.map((connection) => {
                         const from = zodiac.stars.find(
@@ -1928,7 +1921,6 @@ function App() {
               })}
             </div>
             <section className="constellation-panel" aria-labelledby="constellation-title">
-              <span className="focused-symbol">{textSymbol(selectedZodiac.symbol)}</span>
               <div className="section-heading">
                 <div>
                   <h1 id="constellation-title">
@@ -2388,8 +2380,17 @@ function WhiteboardsView({
   const [panning, setPanning] = useState(false)
   const [connectFromId, setConnectFromId] = useState<string | null>(null)
   const [draftStroke, setDraftStroke] = useState<WhiteboardStroke | null>(null)
+  const [dragPreview, setDragPreview] = useState<{ nodeId: string; x: number; y: number } | null>(
+    null,
+  )
+  const [erasingStrokeIds, setErasingStrokeIds] = useState<Set<string>>(() => new Set())
   const boardSurfaceRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const draggingNodeIdRef = useRef<string | null>(null)
+  const draftStrokeRef = useRef<WhiteboardStroke | null>(null)
+  const dragPreviewRef = useRef<{ nodeId: string; x: number; y: number } | null>(null)
+  const erasingStrokeIdsRef = useRef<Set<string>>(new Set())
+  const renderFrameRef = useRef<number | null>(null)
 
   const selectedBoard = whiteboards[selectedBoardId] ?? boards[0]
   const filteredBoards = boards.filter((board) =>
@@ -2397,14 +2398,28 @@ function WhiteboardsView({
   )
   const boardNodes = selectedBoard?.nodes ?? []
   const boardEdges = selectedBoard?.edges ?? []
-  const boardStrokes = selectedBoard?.strokes ?? []
+  const boardStrokes = (selectedBoard?.strokes ?? []).filter(
+    (stroke) => !erasingStrokeIds.has(stroke.id),
+  )
   const boardImages = selectedBoard?.images ?? []
+  const displayNodes = boardNodes.map((node) =>
+    dragPreview?.nodeId === node.id ? { ...node, x: dragPreview.x, y: dragPreview.y } : node,
+  )
 
   useEffect(() => {
     if (!selectedBoard && boards[0]) {
       setSelectedBoardId(boards[0].id)
     }
   }, [boards, selectedBoard])
+
+  useEffect(
+    () => () => {
+      if (renderFrameRef.current !== null) {
+        window.cancelAnimationFrame(renderFrameRef.current)
+      }
+    },
+    [],
+  )
 
   function touchBoard(board: Whiteboard): Whiteboard {
     return { ...board, updatedAt: new Date().toISOString() }
@@ -2443,12 +2458,24 @@ function WhiteboardsView({
       .some((current, index) => pointDistanceToSegment(point, stroke.points[index], current) < 18)
   }
 
+  function scheduleWhiteboardFrame() {
+    if (renderFrameRef.current !== null) return
+    renderFrameRef.current = window.requestAnimationFrame(() => {
+      setDraftStroke(draftStrokeRef.current)
+      setDragPreview(dragPreviewRef.current)
+      setErasingStrokeIds(new Set(erasingStrokeIdsRef.current))
+      renderFrameRef.current = null
+    })
+  }
+
   function eraseAt(point: { x: number; y: number }) {
     if (!selectedBoard) return
-    updateBoard(selectedBoard.id, (board) => ({
-      ...board,
-      strokes: board.strokes.filter((stroke) => !strokeNearPoint(stroke, point)),
-    }))
+    selectedBoard.strokes.forEach((stroke) => {
+      if (strokeNearPoint(stroke, point)) {
+        erasingStrokeIdsRef.current.add(stroke.id)
+      }
+    })
+    scheduleWhiteboardFrame()
   }
 
   function deleteNode(nodeId: string) {
@@ -2515,16 +2542,22 @@ function WhiteboardsView({
     })
   }
 
-  function canvasPoint(event: PointerEvent<HTMLElement>) {
+  function canvasPointFromClient(clientX: number, clientY: number) {
     const rect = boardSurfaceRef.current?.getBoundingClientRect()
     return {
-      x: event.clientX - (rect?.left ?? 0) - pan.x,
-      y: event.clientY - (rect?.top ?? 0) - pan.y,
+      x: clientX - (rect?.left ?? 0) - pan.x,
+      y: clientY - (rect?.top ?? 0) - pan.y,
     }
+  }
+
+  function canvasPoint(event: PointerEvent<HTMLElement>) {
+    return canvasPointFromClient(event.clientX, event.clientY)
   }
 
   function handleSurfacePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (!selectedBoard) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
     if (mode === 'node') {
       const point = canvasPoint(event)
       updateBoard(selectedBoard.id, (board) => ({
@@ -2534,12 +2567,13 @@ function WhiteboardsView({
       return
     }
     if (mode === 'draw') {
-      setDraftStroke({
+      draftStrokeRef.current = {
         id: createId('stroke'),
         points: [canvasPoint(event)],
         color: '#e4b46e',
         width: 3,
-      })
+      }
+      setDraftStroke(draftStrokeRef.current)
       return
     }
     if (mode === 'erase') {
@@ -2551,18 +2585,29 @@ function WhiteboardsView({
 
   function handleSurfacePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!selectedBoard) return
-    if (draggingNodeId) {
+    event.preventDefault()
+    const activeDraggingNodeId = draggingNodeIdRef.current ?? draggingNodeId
+    if (activeDraggingNodeId) {
       const point = canvasPoint(event)
-      updateBoard(selectedBoard.id, (board) => ({
-        ...board,
-        nodes: board.nodes.map((node) =>
-          node.id === draggingNodeId ? { ...node, x: point.x, y: point.y } : node,
-        ),
-      }))
+      dragPreviewRef.current = { nodeId: activeDraggingNodeId, x: point.x, y: point.y }
+      scheduleWhiteboardFrame()
       return
     }
-    if (draftStroke) {
-      setDraftStroke({ ...draftStroke, points: [...draftStroke.points, canvasPoint(event)] })
+    if (draftStrokeRef.current) {
+      const nativeEvent = event.nativeEvent as globalThis.PointerEvent & {
+        getCoalescedEvents?: () => globalThis.PointerEvent[]
+      }
+      const pointerEvents = nativeEvent.getCoalescedEvents?.() ?? [nativeEvent]
+      draftStrokeRef.current = {
+        ...draftStrokeRef.current,
+        points: [
+          ...draftStrokeRef.current.points,
+          ...pointerEvents.map((pointerEvent) =>
+            canvasPointFromClient(pointerEvent.clientX, pointerEvent.clientY),
+          ),
+        ],
+      }
+      scheduleWhiteboardFrame()
       return
     }
     if (mode === 'erase') {
@@ -2574,21 +2619,49 @@ function WhiteboardsView({
     }
   }
 
-  function handleSurfacePointerUp() {
-    if (selectedBoard && draftStroke && draftStroke.points.length > 1) {
+  function handleSurfacePointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (selectedBoard && dragPreviewRef.current) {
+      const preview = dragPreviewRef.current
       updateBoard(selectedBoard.id, (board) => ({
         ...board,
-        strokes: [...board.strokes, draftStroke],
+        nodes: board.nodes.map((node) =>
+          node.id === preview.nodeId ? { ...node, x: preview.x, y: preview.y } : node,
+        ),
+      }))
+    }
+    if (selectedBoard && draftStrokeRef.current && draftStrokeRef.current.points.length > 1) {
+      const completedStroke = draftStrokeRef.current
+      updateBoard(selectedBoard.id, (board) => ({
+        ...board,
+        strokes: [...board.strokes, completedStroke],
+      }))
+    }
+    if (selectedBoard && erasingStrokeIdsRef.current.size > 0) {
+      const erasedIds = new Set(erasingStrokeIdsRef.current)
+      updateBoard(selectedBoard.id, (board) => ({
+        ...board,
+        strokes: board.strokes.filter((stroke) => !erasedIds.has(stroke.id)),
       }))
     }
     setDraggingNodeId(null)
+    draggingNodeIdRef.current = null
     setPanning(false)
+    dragPreviewRef.current = null
+    draftStrokeRef.current = null
+    erasingStrokeIdsRef.current = new Set()
+    setDragPreview(null)
     setDraftStroke(null)
+    setErasingStrokeIds(new Set())
   }
 
   function handleNodePointerDown(event: PointerEvent<HTMLDivElement>, nodeId: string) {
     event.stopPropagation()
     if (!selectedBoard) return
+    event.preventDefault()
+    boardSurfaceRef.current?.setPointerCapture(event.pointerId)
     if (mode === 'connect') {
       if (!connectFromId) {
         setConnectFromId(nodeId)
@@ -2606,7 +2679,13 @@ function WhiteboardsView({
       setConnectFromId(null)
       return
     }
+    draggingNodeIdRef.current = nodeId
     setDraggingNodeId(nodeId)
+    const node = boardNodes.find((item) => item.id === nodeId)
+    if (node) {
+      dragPreviewRef.current = { nodeId, x: node.x, y: node.y }
+      setDragPreview(dragPreviewRef.current)
+    }
   }
 
   function updateNodeText(nodeId: string, text: string) {
@@ -2708,7 +2787,19 @@ function WhiteboardsView({
       doc.setFontSize(10)
       doc.text(node.text, tx(node.x) + 10, ty(node.y) - 8)
     })
-    doc.save(`${safeMarkdownFilename(selectedBoard.title).replace(/\.md$/i, '')}.pdf`)
+    const filename = `${safeMarkdownFilename(selectedBoard.title).replace(/\.md$/i, '')}.pdf`
+
+    if (isTauriRuntime()) {
+      try {
+        const contentsBase64 = arrayBufferToBase64(doc.output('arraybuffer'))
+        await invoke<string>('save_pdf_file', { filename, contentsBase64 })
+        return
+      } catch (error) {
+        console.warn('Unable to save PDF through Tauri, falling back to browser download', error)
+      }
+    }
+
+    doc.save(filename)
   }
 
   return (
@@ -2811,8 +2902,8 @@ function WhiteboardsView({
               ))}
               <svg className="whiteboard-lines" viewBox="0 0 2400 1600">
                 {boardEdges.map((edge) => {
-                  const from = boardNodes.find((node) => node.id === edge.from)
-                  const to = boardNodes.find((node) => node.id === edge.to)
+                  const from = displayNodes.find((node) => node.id === edge.from)
+                  const to = displayNodes.find((node) => node.id === edge.to)
                   if (!from || !to) return null
                   return <line key={edge.id} x1={from.x} x2={to.x} y1={from.y} y2={to.y} />
                 })}
@@ -2824,8 +2915,8 @@ function WhiteboardsView({
                 ))}
               </svg>
               {boardEdges.map((edge) => {
-                const from = boardNodes.find((node) => node.id === edge.from)
-                const to = boardNodes.find((node) => node.id === edge.to)
+                const from = displayNodes.find((node) => node.id === edge.from)
+                const to = displayNodes.find((node) => node.id === edge.to)
                 if (!from || !to) return null
                 return (
                   <input
@@ -2838,7 +2929,7 @@ function WhiteboardsView({
                   />
                 )
               })}
-              {boardNodes.map((node) => (
+              {displayNodes.map((node) => (
                 <div
                   className={`whiteboard-node ${connectFromId === node.id ? 'connecting' : ''}`}
                   key={node.id}
@@ -3194,10 +3285,10 @@ function SettingsView({
           </button>
         </div>
         {migrationNotice ? <p className="settings-note">{migrationNotice}</p> : null}
-        <div className="settings-divider">
+        <div className="settings-divider tablet-font-controls">
           <span>{t.typographyTitle}</span>
         </div>
-        <label>
+        <label className="tablet-font-controls">
           {t.chineseFont}
           <select
             value={fontSettings.zhFont}
@@ -3215,7 +3306,7 @@ function SettingsView({
             ))}
           </select>
         </label>
-        <label>
+        <label className="tablet-font-controls">
           {t.englishFont}
           <select
             value={fontSettings.enFont}
@@ -3233,7 +3324,7 @@ function SettingsView({
             ))}
           </select>
         </label>
-        <div className="font-import-row">
+        <div className="font-import-row tablet-font-controls">
           <label>
             {t.importChineseFont}
             <input
@@ -3251,7 +3342,7 @@ function SettingsView({
             />
           </label>
         </div>
-        <div className="imported-fonts-panel">
+        <div className="imported-fonts-panel tablet-font-controls">
           <span>{t.importedFonts}</span>
           {fontSettings.zhImports.length + fontSettings.enImports.length > 0 ? (
             <div className="imported-fonts-list">
@@ -3308,7 +3399,7 @@ function SettingsView({
             <p>{t.noImportedFonts}</p>
           )}
         </div>
-        {fontNotice ? <p className="settings-note">{fontNotice}</p> : null}
+        {fontNotice ? <p className="settings-note tablet-font-controls">{fontNotice}</p> : null}
       </div>
     </>
   )

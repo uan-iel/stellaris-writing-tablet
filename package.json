@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "tauri": "tauri",
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:build:windows": "tauri build --config src-tauri/tauri.windows.conf.json",
@@ -12,7 +13,9 @@
     "setup:mac": "scripts/setup-desktop-mac.command",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tablet:android:apk": "tauri android build --apk --target aarch64 --ci",
+    "tablet:android:build": "tauri android build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

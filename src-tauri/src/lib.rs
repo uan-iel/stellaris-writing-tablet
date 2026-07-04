@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::{engine::general_purpose, Engine as _};
+
 #[tauri::command]
 fn save_markdown_file(filename: String, contents: String) -> Result<String, String> {
     let mut directory = downloads_dir()
@@ -16,6 +18,26 @@ fn save_markdown_file(filename: String, contents: String) -> Result<String, Stri
     let path = unique_file_path(&directory, &filename);
 
     fs::write(&path, contents).map_err(|error| format!("Could not save markdown file: {error}"))?;
+
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+fn save_pdf_file(filename: String, contents_base64: String) -> Result<String, String> {
+    let mut directory = downloads_dir()
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    directory.push("Stellaris Whiteboards");
+
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create whiteboard folder: {error}"))?;
+
+    let filename = pdf_filename(&filename);
+    let path = unique_file_path(&directory, &filename);
+    let contents = general_purpose::STANDARD
+        .decode(contents_base64)
+        .map_err(|error| format!("Could not decode PDF file: {error}"))?;
+
+    fs::write(&path, contents).map_err(|error| format!("Could not save PDF file: {error}"))?;
 
     Ok(path.display().to_string())
 }
@@ -98,6 +120,14 @@ fn unix_timestamp() -> u64 {
 }
 
 fn markdown_filename(value: &str) -> String {
+    file_with_extension(value, "Untitled Note", "md")
+}
+
+fn pdf_filename(value: &str) -> String {
+    file_with_extension(value, "Untitled Whiteboard", "pdf")
+}
+
+fn file_with_extension(value: &str, fallback: &str, extension: &str) -> String {
     let mut name = value
         .chars()
         .map(|character| match character {
@@ -111,11 +141,12 @@ fn markdown_filename(value: &str) -> String {
         .to_string();
 
     if name.is_empty() {
-        name = "Untitled Note".to_string();
+        name = fallback.to_string();
     }
 
-    if !name.to_lowercase().ends_with(".md") {
-        name.push_str(".md");
+    let required_suffix = format!(".{extension}");
+    if !name.to_lowercase().ends_with(&required_suffix) {
+        name.push_str(&required_suffix);
     }
 
     name
@@ -157,6 +188,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             save_markdown_file,
+            save_pdf_file,
             save_app_snapshot,
             load_app_snapshot,
             export_migration_file

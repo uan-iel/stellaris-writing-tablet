@@ -60,7 +60,6 @@
 .theme-day .compact-card span,
 .theme-day .zodiac-orb strong,
 .theme-day .zodiac-orb small,
-.theme-day .focused-symbol,
 .theme-day .section-heading h1,
 .theme-day .section-heading p,
 .theme-day .section-heading small,
@@ -455,8 +454,8 @@ button {
   height: 148px;
   padding: 0;
   display: grid;
-  grid-template-rows: 28px 84px 18px 12px;
-  row-gap: 2px;
+  grid-template-rows: 92px 18px 12px;
+  row-gap: 3px;
   place-items: center;
   color: var(--ink);
   background: transparent;
@@ -466,15 +465,6 @@ button {
     transform 420ms ease,
     opacity 420ms ease,
     border-color 220ms ease;
-}
-
-.zodiac-orb span {
-  color: var(--gold);
-  font-family: var(--display);
-  font-style: italic;
-  font-size: 24px;
-  line-height: 1;
-  align-self: start;
 }
 
 .mini-map {
@@ -518,11 +508,6 @@ button {
   filter:
     drop-shadow(0 0 3px rgba(255, 224, 151, 1))
     drop-shadow(0 0 9px rgba(255, 178, 67, 0.86));
-}
-
-.theme-day .zodiac-orb span,
-.theme-day .focused-symbol {
-  color: #050505;
 }
 
 .theme-day .mini-map > circle,
@@ -569,20 +554,6 @@ button {
 .theme-day .constellation-panel {
   background: transparent;
   box-shadow: none;
-}
-
-.focused-symbol {
-  position: absolute;
-  top: 34px;
-  left: 50%;
-  z-index: 3;
-  color: var(--gold);
-  font-family: var(--display);
-  font-size: 36px;
-  font-style: italic;
-  line-height: 1;
-  transform: translateX(-50%);
-  pointer-events: none;
 }
 
 .section-heading {
@@ -1528,6 +1499,10 @@ button {
   min-height: 0;
   overflow: hidden;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   background:
     radial-gradient(circle at 50% 45%, rgba(184, 220, 255, 0.08), transparent 30rem),
     linear-gradient(rgba(224, 166, 89, 0.05) 1px, transparent 1px),
@@ -1594,6 +1569,7 @@ button {
   gap: 8px;
   align-items: start;
   cursor: move;
+  touch-action: none;
 }
 
 .whiteboard-node > span {
@@ -1626,6 +1602,9 @@ button {
   min-height: 58px;
   padding: 10px 12px;
   resize: both;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .edge-label {
@@ -2019,5 +1998,228 @@ button {
 
   .status-column {
     order: -1;
+  }
+}
+
+.tablet-font-controls {
+  display: none !important;
+}
+
+@media (min-width: 760px) and (max-width: 1366px) {
+  .app-shell {
+    height: 100dvh;
+    grid-template-columns: clamp(172px, 19vw, 220px) minmax(0, 1fr);
+    overflow: hidden;
+    background-size: auto, auto 100%, auto, auto, 120px 120px, auto;
+  }
+
+  .sidebar {
+    height: 100dvh;
+    min-height: 0;
+    padding: clamp(18px, 2.2vw, 28px) clamp(12px, 1.6vw, 18px) clamp(18px, 2vw, 22px);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(16px, 2vw, 24px);
+  }
+
+  .brand {
+    grid-template-columns: 34px 1fr;
+    gap: 10px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand strong {
+    font-size: clamp(15px, 1.6vw, 19px);
+    letter-spacing: 0.18em;
+  }
+
+  .brand small {
+    font-size: clamp(9px, 1vw, 11px);
+    letter-spacing: 0.1em;
+  }
+
+  .side-nav {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .side-nav button {
+    min-height: clamp(42px, 5.4vh, 50px);
+    gap: 10px;
+    padding: 0 10px;
+    font-size: clamp(14px, 1.45vw, 17px);
+  }
+
+  .side-nav button span {
+    width: 18px;
+  }
+
+  .moon-card {
+    display: grid;
+    min-height: 0;
+    padding: clamp(18px, 2vw, 24px);
+  }
+
+  .moon-card span {
+    font-size: clamp(24px, 3vw, 32px);
+  }
+
+  .moon-card p {
+    font-size: clamp(15px, 1.55vw, 18px);
+    line-height: 1.55;
+  }
+
+  .compact-card {
+    padding: clamp(14px, 1.6vw, 18px);
+  }
+
+  .workspace {
+    height: 100dvh;
+    grid-template-rows: clamp(74px, 9.6vh, 96px) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .topbar {
+    min-height: clamp(74px, 9.6vh, 96px);
+    padding: clamp(20px, 2.6vh, 30px) clamp(22px, 3vw, 42px) 10px;
+  }
+
+  .topbar p,
+  .topbar h2 {
+    font-size: clamp(15px, 1.45vw, 18px);
+  }
+
+  .time-theme-cluster {
+    gap: 10px;
+  }
+
+  .time-theme-cluster time {
+    min-width: 84px;
+    font-size: clamp(15px, 1.45vw, 18px);
+  }
+
+  .moon-toggle {
+    min-width: clamp(150px, 16vw, 190px);
+    height: 42px;
+    padding: 0 14px;
+    border-radius: 9px;
+    font-size: clamp(13px, 1.2vw, 15px);
+  }
+
+  .galaxy-layout {
+    height: calc(100dvh - clamp(74px, 9.6vh, 96px));
+    padding: 0 clamp(14px, 2vw, 24px) clamp(18px, 2.4vh, 26px) clamp(20px, 2.8vw, 38px);
+    display: grid;
+    grid-template-columns: minmax(420px, 1fr) clamp(276px, 28vw, 330px);
+    gap: clamp(14px, 1.8vw, 22px);
+    overflow: hidden;
+  }
+
+  .orbit-panel {
+    min-height: 0;
+    border-radius: 50%;
+    overflow: visible;
+  }
+
+  .orbit {
+    transform: scale(0.84);
+    transform-origin: center;
+  }
+
+  .zodiac-orb {
+    width: 122px;
+    height: 138px;
+    grid-template-rows: 86px 17px 11px;
+    row-gap: 3px;
+  }
+
+  .mini-map {
+    width: 78px;
+    height: 78px;
+  }
+
+  .constellation-panel {
+    bottom: clamp(36px, 5vh, 54px);
+    width: clamp(286px, 30vw, 336px);
+    height: clamp(286px, 30vw, 336px);
+    padding: 22px;
+  }
+
+  .constellation-map {
+    top: clamp(54px, 6vw, 68px);
+    width: clamp(178px, 18vw, 203px);
+    height: clamp(122px, 12.5vw, 140px);
+  }
+
+  .section-heading {
+    bottom: clamp(34px, 4.2vh, 40px);
+  }
+
+  .section-heading h1 {
+    font-size: clamp(22px, 2.4vw, 26px);
+  }
+
+  .status-column {
+    order: initial;
+    max-height: 100%;
+    overflow: hidden auto;
+  }
+
+  .note-panel {
+    min-height: 100%;
+    padding: clamp(26px, 3vw, 42px) clamp(22px, 2.6vw, 32px);
+    gap: clamp(15px, 1.6vw, 22px);
+  }
+
+  .note-panel h2 {
+    margin: 14px 0 8px;
+    font-size: clamp(24px, 2.6vw, 30px);
+  }
+
+  .metric strong {
+    font-size: clamp(34px, 3.6vw, 44px);
+  }
+
+  .primary-action,
+  .secondary-action,
+  .copy-button {
+    min-height: 48px;
+    padding: 0 18px;
+  }
+
+  .utility-layout {
+    height: calc(100dvh - clamp(74px, 9.6vh, 96px));
+    padding: 0 clamp(24px, 3.4vw, 48px) clamp(22px, 3vh, 36px);
+    overflow: hidden auto;
+  }
+
+  .utility-heading {
+    max-width: 640px;
+  }
+
+  .utility-heading h1 {
+    font-size: clamp(34px, 4vw, 42px);
+  }
+
+  .notes-grid,
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-panel {
+    max-width: 680px;
+  }
+
+  .whiteboard-utility {
+    overflow: hidden;
+  }
+
+  .whiteboard-shell {
+    grid-template-columns: clamp(220px, 24vw, 280px) minmax(0, 1fr);
   }
 }
